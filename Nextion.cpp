@@ -178,7 +178,7 @@ void CNextion::writeDStarInt(const char* my1, const char* my2, const char* your,
 		sendCommandAction(2U);
 	}
 
-	char text[30U];
+	char text[50U];
 	::sprintf(text, "dim=%u", m_brightness);
 	sendCommand(text);
 
@@ -273,7 +273,7 @@ void CNextion::writeDMRInt(unsigned int slotNo, const std::string& src, bool gro
 		}
 	}
 
-	char text[30U];
+	char text[50U];
 	::sprintf(text, "dim=%u", m_brightness);
 	sendCommand(text);
 
@@ -367,7 +367,7 @@ void CNextion::writeDMRTAInt(unsigned int slotNo, unsigned char* talkerAlias, co
 	}
 
 	if (slotNo == 1U) {
-		char text[40U];
+		char text[50U];
 		::sprintf(text, "t0.txt=\"1 %s %s\"", type, talkerAlias);
 
 		if (m_screenLayout == 2U) {
@@ -384,7 +384,7 @@ void CNextion::writeDMRTAInt(unsigned int slotNo, unsigned char* talkerAlias, co
 		sendCommand(text);
 		sendCommandAction(63U);
 	} else {
-		char text[40U];
+		char text[50U];
 		::sprintf(text, "t2.txt=\"2 %s %s\"", type, talkerAlias);
 
 		if (m_screenLayout == 2U) {
@@ -616,7 +616,7 @@ void CNextion::writeNXDNInt(const char* source, bool group, unsigned int dest, c
 
 	if (m_mode != MODE_NXDN) {
 		sendCommand("page NXDN");
-		sendCommandAction(5U);
+		sendCommandAction(7U);
 	}
 
 	char text[30U];
@@ -625,11 +625,11 @@ void CNextion::writeNXDNInt(const char* source, bool group, unsigned int dest, c
 
 	::sprintf(text, "t0.txt=\"%s %.10s\"", type, source);
 	sendCommand(text);
-	sendCommandAction(102U);
+	sendCommandAction(122U);
 
 	::sprintf(text, "t1.txt=\"%s%u\"", group ? "TG" : "", dest);
 	sendCommand(text);
-	sendCommandAction(103U);
+	sendCommandAction(123U);
 
 	m_clockDisplayTimer.stop();
 
@@ -649,7 +649,7 @@ void CNextion::writeNXDNRSSIInt(unsigned char rssi)
 		char text[25U];
 		::sprintf(text, "t2.txt=\"-%udBm\"", m_rssiAccum1 / NXDN_RSSI_COUNT);
 		sendCommand(text);
-		sendCommandAction(104U);
+		sendCommandAction(124U);
 		m_rssiAccum1 = 0U;
 		m_rssiCount1 = 0U;
 	}
@@ -664,7 +664,7 @@ void CNextion::writeNXDNBERInt(float ber)
 		char text[25U];
 		::sprintf(text, "t3.txt=\"%.1f%%\"", m_berAccum1 / float(NXDN_BER_COUNT));
 		sendCommand(text);
-		sendCommandAction(105U);
+		sendCommandAction(125U);
 		m_berAccum1 = 0.0F;
 		m_berCount1 = 0U;
 	}
@@ -673,10 +673,41 @@ void CNextion::writeNXDNBERInt(float ber)
 void CNextion::clearNXDNInt()
 {
 	sendCommand("t0.txt=\"Listening\"");
-	sendCommandAction(101U);
+	sendCommandAction(121U);
 	sendCommand("t1.txt=\"\"");
 	sendCommand("t2.txt=\"\"");
 	sendCommand("t3.txt=\"\"");
+}
+
+void CNextion::writePOCSAGInt(uint32_t ric, const std::string& message)
+{
+	if (m_mode != MODE_POCSAG) {
+		sendCommand("page POCSAG");
+		sendCommandAction(6U);
+	}
+
+	char text[200U];
+	::sprintf(text, "dim=%u", m_brightness);
+	sendCommand(text);
+
+	::sprintf(text, "t0.txt=\"RIC: %u\"", ric);
+	sendCommand(text);
+	sendCommandAction(132U);
+
+	::sprintf(text, "t1.txt=\"%s\"", message.c_str());
+	sendCommand(text);
+	sendCommandAction(133U);
+
+	m_clockDisplayTimer.stop();
+
+	m_mode = MODE_POCSAG;
+}
+
+void CNextion::clearPOCSAGInt()
+{
+	sendCommand("t0.txt=\"Waiting\"");
+	sendCommandAction(134U);
+	sendCommand("t1.txt=\"\"");
 }
 
 void CNextion::writeCWInt()

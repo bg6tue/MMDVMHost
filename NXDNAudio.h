@@ -16,33 +16,22 @@
 *   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
-#if !defined(NXDNUDCH_H)
-#define	NXDNUDCH_H
+#if !defined(NXDNAudio_H)
+#define	NXDNAudio_H
 
-class CNXDNUDCH {
+class CNXDNAudio {
 public:
-	CNXDNUDCH(const CNXDNUDCH& udch);
-	CNXDNUDCH();
-	~CNXDNUDCH();
+	CNXDNAudio();
+	~CNXDNAudio();
 
-	bool decode(const unsigned char* data);
+	void encode(const unsigned char* in, unsigned char* out) const;
 
-	void encode(unsigned char* data) const;
-
-	unsigned char getRAN() const;
-
-	void getData(unsigned char* data) const;
-	void getRaw(unsigned char* data) const;
-
-	void setRAN(unsigned char ran);
-
-	void setData(const unsigned char* data);
-	void setRaw(const unsigned char* data);
-
-	CNXDNUDCH& operator=(const CNXDNUDCH& udch);
+	void decode(const unsigned char* in, unsigned char* out) const;
 
 private:
-	unsigned char* m_data;
+	void encode(const unsigned char* in, unsigned char* out, unsigned int offset) const;
+
+	void decode(const unsigned char* in, unsigned char* out, unsigned int offset) const;
 };
 
 #endif

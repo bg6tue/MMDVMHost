@@ -48,8 +48,13 @@
 #
 #                              CONFIGURATION
 #
-# Full path to DMR ID file
-DMRIDFILE=/path/to/DMR/ID/file/DMRIds.dat
+# Full path to DMR ID file, without final slash
+DMRIDPATH=/path/to/DMR/ID/file
+DMRIDFILE=${DMRIDPATH}/DMRIds.dat
+
+# DMR IDs now served by RadioID.net
+DATABASEURL='https://ham-digital.org/status/users.csv'
+
 #
 # How many DMR ID files do you want backed up (0 = do not keep backups)
 DMRFILEBACKUP=1
@@ -90,7 +95,15 @@ then
 fi
 
 # Generate new file
-curl 'http://dmr-marc.net/cgi-bin/trbo-database/datadump.cgi?table=users&format=csv&header=0' 2>/dev/null | sed -e 's/\t//g' | awk -F"," '/,/{gsub(/ /, "", $2); printf "%s\t%s\t%s\n", $1, $2, $3}' | sed -e 's/\(.\) .*/\1/g' > ${DMRIDFILE}
+curl ${DATABASEURL} 2>/dev/null | sed -e 's/\t//g' | awk -F"," '/,/{gsub(/ /, "", $2); printf "%s\t%s\t%s\n", $1, $2, $3}' | sed -e 's/\(.\) .*/\1/g' > ${DMRIDPATH}/DMRIds.tmp
+NUMOFLINES=$(wc -l ${DMRIDPATH}/DMRIds.tmp | awk '{print $1}')
+if [ $NUMOFLINES -gt 1 ]
+then
+   mv ${DMRIDPATH}/DMRIds.tmp ${DMRIDFILE}
+else
+   echo " ERROR during file update "
+   rm ${DMRIDPATH}/DMRIds.tmp
+fi
 
 # Restart MMDVMHost
 eval ${RESTARTCOMMAND}

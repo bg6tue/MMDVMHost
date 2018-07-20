@@ -155,11 +155,28 @@ void CNXDNFACCH1::getData(unsigned char* data) const
 	::memcpy(data, m_data, 10U);
 }
 
+void CNXDNFACCH1::getRaw(unsigned char* data) const
+{
+	assert(data != NULL);
+
+	::memset(data, 0x00U, 12U);
+	::memcpy(data, m_data, 10U);
+
+	CNXDNCRC::encodeCRC12(data, 80U);
+}
+
 void CNXDNFACCH1::setData(const unsigned char* data)
 {
 	assert(data != NULL);
 
 	::memcpy(m_data, data, 10U);
+}
+
+void CNXDNFACCH1::setRaw(const unsigned char* data)
+{
+	assert(data != NULL);
+
+	::memcpy(m_data, data, 12U);
 }
 
 CNXDNFACCH1& CNXDNFACCH1::operator=(const CNXDNFACCH1& facch1)

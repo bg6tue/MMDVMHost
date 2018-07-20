@@ -170,7 +170,8 @@ bool CDMRSlot::writeModem(unsigned char *data, unsigned int len)
 		
 		// Convert the raw RSSI to dBm
 		int rssi = m_rssiMapper->interpolate(raw);
-		LogDebug("DMR Slot %u, raw RSSI: %u, reported RSSI: %d dBm", m_slotNo, raw, rssi);
+		if (rssi != 0)
+			LogDebug("DMR Slot %u, raw RSSI: %u, reported RSSI: %d dBm", m_slotNo, raw, rssi);
 
 		// RSSI is always reported as positive
 		m_rssi = (rssi >= 0) ? rssi : -rssi;
@@ -1066,16 +1067,16 @@ void CDMRSlot::writeNetwork(const CDMRData& dmrData)
 		m_netState = RS_NET_AUDIO;
 
 		setShortLC(m_slotNo, dstId, flco, ACTIVITY_VOICE);
-
 		std::string src = m_lookup->find(srcId);
 		std::string dst = m_lookup->find(dstId);
-
-		m_display->writeDMR(m_slotNo, src, flco == FLCO_GROUP, dst, "N");
+		std::string cn = m_lookup->findWithName(srcId);
+		m_display->writeDMR(m_slotNo, cn, flco == FLCO_GROUP, dst, "N");
 
 #if defined(DUMP_DMR)
 		openFile();
 		writeFile(data);
 #endif
+
 		LogMessage("DMR Slot %u, received network voice header from %s to %s%s", m_slotNo, src.c_str(), flco == FLCO_GROUP ? "TG " : "", dst.c_str());
 	} else if (dataType == DT_VOICE_PI_HEADER) {
 		if (m_netState != RS_NET_AUDIO) {

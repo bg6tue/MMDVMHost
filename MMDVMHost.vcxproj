@@ -192,6 +192,7 @@
     <ClInclude Include="NetworkInfo.h" />
     <ClInclude Include="Nextion.h" />
     <ClInclude Include="NullDisplay.h" />
+    <ClInclude Include="NXDNAudio.h" />
     <ClInclude Include="NXDNControl.h" />
     <ClInclude Include="NXDNConvolution.h" />
     <ClInclude Include="NXDNCRC.h" />
@@ -211,6 +212,9 @@
     <ClInclude Include="P25NID.h" />
     <ClInclude Include="P25Trellis.h" />
     <ClInclude Include="P25Utils.h" />
+    <ClInclude Include="POCSAGControl.h" />
+    <ClInclude Include="POCSAGDefines.h" />
+    <ClInclude Include="POCSAGNetwork.h" />
     <ClInclude Include="QR1676.h" />
     <ClInclude Include="RingBuffer.h" />
     <ClInclude Include="RS129.h" />
@@ -274,6 +278,7 @@
     <ClCompile Include="NetworkInfo.cpp" />
     <ClCompile Include="Nextion.cpp" />
     <ClCompile Include="NullDisplay.cpp" />
+    <ClCompile Include="NXDNAudio.cpp" />
     <ClCompile Include="NXDNControl.cpp" />
     <ClCompile Include="NXDNConvolution.cpp" />
     <ClCompile Include="NXDNCRC.cpp" />
@@ -292,6 +297,8 @@
     <ClCompile Include="P25NID.cpp" />
     <ClCompile Include="P25Trellis.cpp" />
     <ClCompile Include="P25Utils.cpp" />
+    <ClCompile Include="POCSAGControl.cpp" />
+    <ClCompile Include="POCSAGNetwork.cpp" />
     <ClCompile Include="QR1676.cpp" />
     <ClCompile Include="RS129.cpp" />
     <ClCompile Include="RS241213.cpp" />

@@ -16,33 +16,20 @@
 *   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
-#if !defined(NXDNUDCH_H)
-#define	NXDNUDCH_H
+#if !defined(POCSAGDEFINES_H)
+#define  POCSAGDEFINES_H
 
-class CNXDNUDCH {
-public:
-	CNXDNUDCH(const CNXDNUDCH& udch);
-	CNXDNUDCH();
-	~CNXDNUDCH();
+#include <cstdint>
 
-	bool decode(const unsigned char* data);
+const unsigned int POCSAG_RADIO_SYMBOL_LENGTH = 20U;      // At 24 kHz sample rate
 
-	void encode(unsigned char* data) const;
+const unsigned int POCSAG_FRAME_LENGTH_WORDS = 17U;
+const unsigned int POCSAG_FRAME_LENGTH_BYTES = POCSAG_FRAME_LENGTH_WORDS * sizeof(uint32_t);
 
-	unsigned char getRAN() const;
+const unsigned int POCSAG_FRAME_ADDRESSES = 8U;
 
-	void getData(unsigned char* data) const;
-	void getRaw(unsigned char* data) const;
+const uint32_t POCSAG_SYNC_WORD = 0x7CD215D8U;
 
-	void setRAN(unsigned char ran);
-
-	void setData(const unsigned char* data);
-	void setRaw(const unsigned char* data);
-
-	CNXDNUDCH& operator=(const CNXDNUDCH& udch);
-
-private:
-	unsigned char* m_data;
-};
+const uint32_t POCSAG_IDLE_WORD = 0x7A89C197U;
 
 #endif

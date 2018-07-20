@@ -30,6 +30,7 @@
 #include "YSFControl.h"
 #include "P25Control.h"
 #include "NXDNControl.h"
+#include "POCSAGControl.h"
 #include "Nextion.h"
 #include "LCDproc.h"
 #include "Thread.h"
@@ -46,6 +47,8 @@
 
 #include <cstdio>
 #include <vector>
+
+#include <cstdlib>
 
 #if !defined(_WIN32) && !defined(_WIN64)
 #include <sys/types.h>
@@ -134,6 +137,7 @@ m_dmrNetwork(NULL),
 m_ysfNetwork(NULL),
 m_p25Network(NULL),
 m_nxdnNetwork(NULL),
+m_pocsagNetwork(NULL),
 m_display(NULL),
 m_ump(NULL),
 m_mode(MODE_IDLE),
@@ -147,6 +151,7 @@ m_dmrNetModeHang(3U),
 m_ysfNetModeHang(3U),
 m_p25NetModeHang(3U),
 m_nxdnNetModeHang(3U),
+m_pocsagNetModeHang(3U),
 m_modeTimer(1000U),
 m_dmrTXTimer(1000U),
 m_cwIdTimer(1000U),
@@ -157,6 +162,7 @@ m_dmrEnabled(false),
 m_ysfEnabled(false),
 m_p25Enabled(false),
 m_nxdnEnabled(false),
+m_pocsagEnabled(false),
 m_cwIdTime(0U),
 m_dmrLookup(NULL),
 m_nxdnLookup(NULL),
@@ -178,19 +184,13 @@ int CMMDVMHost::run()
 		return 1;
 	}
 
-	ret = ::LogInitialise(m_conf.getLogFilePath(), m_conf.getLogFileRoot(), m_conf.getLogFileLevel(), m_conf.getLogDisplayLevel());
-	if (!ret) {
-		::fprintf(stderr, "MMDVMHost: unable to open the log file\n");
-		return 1;
-	}
-
 #if !defined(_WIN32) && !defined(_WIN64)
 	bool m_daemon = m_conf.getDaemon();
 	if (m_daemon) {
 		// Create new process
 		pid_t pid = ::fork();
 		if (pid == -1) {
-			LogWarning("Couldn't fork() , exiting");
+			::fprintf(stderr, "Couldn't fork() , exiting\n");
 			return -1;
 		} else if (pid != 0) {
 			exit(EXIT_SUCCESS);
@@ -198,13 +198,13 @@ int CMMDVMHost::run()
 
 		// Create new session and process group
 		if (::setsid() == -1){
-			LogWarning("Couldn't setsid(), exiting");
+			::fprintf(stderr, "Couldn't setsid(), exiting\n");
 			return -1;
 		}
 
 		// Set the working directory to the root directory
 		if (::chdir("/") == -1){
-			LogWarning("Couldn't cd /, exiting");
+			::fprintf(stderr, "Couldn't cd /, exiting\n");
 			return -1;
 		}
 
@@ -212,41 +212,48 @@ int CMMDVMHost::run()
 		::close(STDOUT_FILENO);
 		::close(STDERR_FILENO);
 
-#if !defined(HD44780) && !defined(OLED)
-		//If we are currently root...
+#if !defined(HD44780) && !defined(OLED) && !defined(_OPENWRT)
+		// If we are currently root...
 		if (getuid() == 0) {
 			struct passwd* user = ::getpwnam("mmdvm");
 			if (user == NULL) {
-				LogError("Could not get the mmdvm user, exiting");
+				::fprintf(stderr, "Could not get the mmdvm user, exiting\n");
 				return -1;
 			}
 
 			uid_t mmdvm_uid = user->pw_uid;
 			gid_t mmdvm_gid = user->pw_gid;
 
-			//Set user and group ID's to mmdvm:mmdvm
+			// Set user and group ID's to mmdvm:mmdvm
 			if (::setgid(mmdvm_gid) != 0) {
-				LogWarning("Could not set mmdvm GID, exiting");
+				::fprintf(stderr, "Could not set mmdvm GID, exiting\n");
 				return -1;
 			}
 
 			if (::setuid(mmdvm_uid) != 0) {
-				LogWarning("Could not set mmdvm UID, exiting");
+				::fprintf(stderr, "Could not set mmdvm UID, exiting\n");
 				return -1;
 			}
 
-			//Double check it worked (AKA Paranoia) 
+			// Double check it worked (AKA Paranoia)
 			if (::setuid(0) != -1){
-				LogWarning("It's possible to regain root - something is wrong!, exiting");
+				::fprintf(stderr, "It's possible to regain root - something is wrong!, exiting\n");
 				return -1;
 			}
 		}
 	}
 #else
-	LogWarning("Dropping root permissions in daemon mode is disabled with HD44780 display");
+	::fprintf(stderr, "Dropping root permissions in daemon mode is disabled.\n");
 	}
 #endif
 #endif
+
+	ret = ::LogInitialise(m_conf.getLogFilePath(), m_conf.getLogFileRoot(), m_conf.getLogFileLevel(), m_conf.getLogDisplayLevel());
+	if (!ret) {
+		::fprintf(stderr, "MMDVMHost: unable to open the log file\n");
+		return 1;
+	}
+
 
 	LogInfo(HEADER1);
 	LogInfo(HEADER2);
@@ -306,6 +313,38 @@ int CMMDVMHost::run()
 		ret = createNXDNNetwork();
 		if (!ret)
 			return 1;
+	}
+
+	if (m_pocsagEnabled && m_conf.getPOCSAGNetworkEnabled()) {
+		ret = createPOCSAGNetwork();
+		if (!ret)
+			return 1;
+	}
+
+	in_addr transparentAddress;
+	unsigned int transparentPort = 0U;
+	CUDPSocket* transparentSocket = NULL;
+
+	if (m_conf.getTransparentEnabled()) {
+		std::string remoteAddress = m_conf.getTransparentRemoteAddress();
+		unsigned int remotePort   = m_conf.getTransparentRemotePort();
+		unsigned int localPort    = m_conf.getTransparentLocalPort();
+
+		LogInfo("Transparent Data");
+		LogInfo("    Remote Address: %s", remoteAddress.c_str());
+		LogInfo("    Remote Port: %u", remotePort);
+		LogInfo("    Local Port: %u", localPort);
+
+		transparentAddress = CUDPSocket::lookup(remoteAddress);
+		transparentPort    = remotePort;
+
+		transparentSocket = new CUDPSocket(localPort);
+		ret = transparentSocket->open();
+		if (!ret) {
+			LogWarning("Could not open the Transparent data socket, disabling");
+			delete transparentSocket;
+			transparentSocket = NULL;
+		}
 	}
 
 	if (m_conf.getCWIdEnabled()) {
@@ -414,7 +453,7 @@ int CMMDVMHost::run()
 		LogInfo("    Embedded LC Only: %s", embeddedLCOnly ? "yes" : "no");
 		LogInfo("    Dump Talker Alias Data: %s", dumpTAData ? "yes" : "no");
 		LogInfo("    Prefixes: %u", prefixes.size());
-		
+
 		if (blackList.size() > 0U)
 			LogInfo("    Source ID Black List: %u", blackList.size());
 		if (whiteList.size() > 0U)
@@ -448,16 +487,18 @@ int CMMDVMHost::run()
 
 	CYSFControl* ysf = NULL;
 	if (m_ysfEnabled) {
-		bool lowDeviation  = m_conf.getFusionLowDeviation();
-		bool remoteGateway = m_conf.getFusionRemoteGateway();
-		bool selfOnly      = m_conf.getFusionSelfOnly();
-		bool sqlEnabled    = m_conf.getFusionSQLEnabled();
-		unsigned char sql  = m_conf.getFusionSQL();
-		m_ysfRFModeHang    = m_conf.getFusionModeHang();
+		bool lowDeviation   = m_conf.getFusionLowDeviation();
+		bool remoteGateway  = m_conf.getFusionRemoteGateway();
+		unsigned int txHang = m_conf.getFusionTXHang();
+		bool selfOnly       = m_conf.getFusionSelfOnly();
+		bool sqlEnabled     = m_conf.getFusionSQLEnabled();
+		unsigned char sql   = m_conf.getFusionSQL();
+		m_ysfRFModeHang     = m_conf.getFusionModeHang();
 
 		LogInfo("YSF RF Parameters");
 		LogInfo("    Low Deviation: %s", lowDeviation ? "yes" : "no");
 		LogInfo("    Remote Gateway: %s", remoteGateway ? "yes" : "no");
+		LogInfo("    TX Hang: %us", txHang);
 		LogInfo("    Self Only: %s", selfOnly ? "yes" : "no");
 		LogInfo("    DSQ: %s", sqlEnabled ? "yes" : "no");
 		if (sqlEnabled)
@@ -515,6 +556,20 @@ int CMMDVMHost::run()
 		LogInfo("    Mode Hang: %us", m_nxdnRFModeHang);
 
 		nxdn = new CNXDNControl(ran, id, selfOnly, m_nxdnNetwork, m_display, m_timeout, m_duplex, remoteGateway, m_nxdnLookup, rssi);
+	}
+
+	CTimer pocsagTimer(1000U, 30U);
+
+	CPOCSAGControl* pocsag = NULL;
+	if (m_pocsagEnabled) {
+		unsigned int frequency = m_conf.getPOCSAGFrequency();
+
+		LogInfo("POCSAG RF Parameters");
+		LogInfo("    Frequency: %uHz", frequency);
+
+		pocsag = new CPOCSAGControl(m_pocsagNetwork, m_display);
+
+		pocsagTimer.start();
 	}
 
 	setMode(MODE_IDLE);
@@ -686,6 +741,10 @@ int CMMDVMHost::run()
 			}
 		}
 
+		len = m_modem->readTransparentData(data);
+		if (transparentSocket != NULL && len > 0U)
+			transparentSocket->write(data, len, transparentAddress, transparentPort);
+
 		if (m_modeTimer.isRunning() && m_modeTimer.hasExpired())
 			setMode(MODE_IDLE);
 
@@ -811,6 +870,33 @@ int CMMDVMHost::run()
 			}
 		}
 
+		if (pocsag != NULL) {
+			ret = m_modem->hasPOCSAGSpace();
+			if (ret) {
+				len = pocsag->readModem(data);
+				if (len > 0U) {
+					if (m_mode == MODE_IDLE) {
+						m_modeTimer.setTimeout(m_pocsagNetModeHang);
+						setMode(MODE_POCSAG);
+					}
+					if (m_mode == MODE_POCSAG) {
+						m_modem->writePOCSAGData(data, len);
+						m_modeTimer.start();
+					} else if (m_mode != MODE_LOCKOUT) {
+						LogWarning("POCSAG data received when in mode %u", m_mode);
+					}
+				}
+			}
+		}
+
+		if (transparentSocket != NULL) {
+			in_addr address;
+			unsigned int port = 0U;
+			len = transparentSocket->read(data, 200U, address, port);
+			if (len > 0U)
+				m_modem->writeTransparentData(data, len);
+		}
+
 		unsigned int ms = stopWatch.elapsed();
 		stopWatch.start();
 
@@ -829,6 +915,8 @@ int CMMDVMHost::run()
 			p25->clock(ms);
 		if (nxdn != NULL)
 			nxdn->clock(ms);
+		if (pocsag != NULL)
+			pocsag->clock(ms);
 
 		if (m_dstarNetwork != NULL)
 			m_dstarNetwork->clock(ms);
@@ -840,6 +928,8 @@ int CMMDVMHost::run()
 			m_p25Network->clock(ms);
 		if (m_nxdnNetwork != NULL)
 			m_nxdnNetwork->clock(ms);
+		if (m_pocsagNetwork != NULL)
+			m_pocsagNetwork->clock(ms);
 
 		m_cwIdTimer.clock(ms);
 		if (m_cwIdTimer.isRunning() && m_cwIdTimer.hasExpired()) {
@@ -872,6 +962,13 @@ int CMMDVMHost::run()
 		if (m_dmrTXTimer.isRunning() && m_dmrTXTimer.hasExpired()) {
 			m_modem->writeDMRStart(false);
 			m_dmrTXTimer.stop();
+		}
+
+		pocsagTimer.clock(ms);
+		if (pocsagTimer.isRunning() && pocsagTimer.hasExpired()) {
+			assert(m_pocsagNetwork != NULL);
+			m_pocsagNetwork->enable(m_mode == MODE_IDLE || m_mode == MODE_POCSAG);
+			pocsagTimer.start();
 		}
 
 		if (m_ump != NULL)
@@ -925,44 +1022,63 @@ int CMMDVMHost::run()
 		delete m_nxdnNetwork;
 	}
 
+	if (m_pocsagNetwork != NULL) {
+		m_pocsagNetwork->close();
+		delete m_pocsagNetwork;
+	}
+
+	if (transparentSocket != NULL) {
+		transparentSocket->close();
+		delete transparentSocket;
+	}
+
 	delete dstar;
 	delete dmr;
 	delete ysf;
 	delete p25;
 	delete nxdn;
+	delete pocsag;
 
 	return 0;
 }
 
 bool CMMDVMHost::createModem()
 {
-	std::string port          = m_conf.getModemPort();
-	bool rxInvert             = m_conf.getModemRXInvert();
-	bool txInvert             = m_conf.getModemTXInvert();
-	bool pttInvert            = m_conf.getModemPTTInvert();
-	unsigned int txDelay      = m_conf.getModemTXDelay();
-	unsigned int dmrDelay     = m_conf.getModemDMRDelay();
-	float rxLevel             = m_conf.getModemRXLevel();
-	float cwIdTXLevel         = m_conf.getModemCWIdTXLevel();
-	float dstarTXLevel        = m_conf.getModemDStarTXLevel();
-	float dmrTXLevel          = m_conf.getModemDMRTXLevel();
-	float ysfTXLevel          = m_conf.getModemYSFTXLevel();
-	float p25TXLevel          = m_conf.getModemP25TXLevel();
-	float nxdnTXLevel         = m_conf.getModemNXDNTXLevel();
-	bool trace                = m_conf.getModemTrace();
-	bool debug                = m_conf.getModemDebug();
-	unsigned int colorCode    = m_conf.getDMRColorCode();
-	bool lowDeviation         = m_conf.getFusionLowDeviation();
-	unsigned int rxFrequency  = m_conf.getRXFrequency();
-	unsigned int txFrequency  = m_conf.getTXFrequency();
-	int rxOffset              = m_conf.getModemRXOffset();
-	int txOffset              = m_conf.getModemTXOffset();
-	int rxDCOffset            = m_conf.getModemRXDCOffset();
-	int txDCOffset            = m_conf.getModemTXDCOffset();
-	float rfLevel             = m_conf.getModemRFLevel();
+	std::string port             = m_conf.getModemPort();
+	std::string protocol	     = m_conf.getModemProtocol();
+	unsigned int address	     = m_conf.getModemAddress();
+	bool rxInvert                = m_conf.getModemRXInvert();
+	bool txInvert                = m_conf.getModemTXInvert();
+	bool pttInvert               = m_conf.getModemPTTInvert();
+	unsigned int txDelay         = m_conf.getModemTXDelay();
+	unsigned int dmrDelay        = m_conf.getModemDMRDelay();
+	float rxLevel                = m_conf.getModemRXLevel();
+	float cwIdTXLevel            = m_conf.getModemCWIdTXLevel();
+	float dstarTXLevel           = m_conf.getModemDStarTXLevel();
+	float dmrTXLevel             = m_conf.getModemDMRTXLevel();
+	float ysfTXLevel             = m_conf.getModemYSFTXLevel();
+	float p25TXLevel             = m_conf.getModemP25TXLevel();
+	float nxdnTXLevel            = m_conf.getModemNXDNTXLevel();
+	float pocsagTXLevel          = m_conf.getModemPOCSAGTXLevel();
+	bool trace                   = m_conf.getModemTrace();
+	bool debug                   = m_conf.getModemDebug();
+	unsigned int colorCode       = m_conf.getDMRColorCode();
+	bool lowDeviation            = m_conf.getFusionLowDeviation();
+	unsigned int txHang          = m_conf.getFusionTXHang();
+	unsigned int rxFrequency     = m_conf.getRXFrequency();
+	unsigned int txFrequency     = m_conf.getTXFrequency();
+	unsigned int pocsagFrequency = m_conf.getPOCSAGFrequency();
+	int rxOffset                 = m_conf.getModemRXOffset();
+	int txOffset                 = m_conf.getModemTXOffset();
+	int rxDCOffset               = m_conf.getModemRXDCOffset();
+	int txDCOffset               = m_conf.getModemTXDCOffset();
+	float rfLevel                = m_conf.getModemRFLevel();
 
 	LogInfo("Modem Parameters");
 	LogInfo("    Port: %s", port.c_str());
+	LogInfo("    Protocol: %s", protocol.c_str());
+	if (protocol == "i2c")
+		LogInfo("    i2c Address: %02X", address);
 	LogInfo("    RX Invert: %s", rxInvert ? "yes" : "no");
 	LogInfo("    TX Invert: %s", txInvert ? "yes" : "no");
 	LogInfo("    PTT Invert: %s", pttInvert ? "yes" : "no");
@@ -980,15 +1096,16 @@ bool CMMDVMHost::createModem()
 	LogInfo("    YSF TX Level: %.1f%%", ysfTXLevel);
 	LogInfo("    P25 TX Level: %.1f%%", p25TXLevel);
 	LogInfo("    NXDN TX Level: %.1f%%", nxdnTXLevel);
+	LogInfo("    POCSAG TX Level: %.1f%%", pocsagTXLevel);
 	LogInfo("    RX Frequency: %uHz (%uHz)", rxFrequency, rxFrequency + rxOffset);
 	LogInfo("    TX Frequency: %uHz (%uHz)", txFrequency, txFrequency + txOffset);
 
-	m_modem = new CModem(port, m_duplex, rxInvert, txInvert, pttInvert, txDelay, dmrDelay, trace, debug);
-	m_modem->setModeParams(m_dstarEnabled, m_dmrEnabled, m_ysfEnabled, m_p25Enabled, m_nxdnEnabled);
-	m_modem->setLevels(rxLevel, cwIdTXLevel, dstarTXLevel, dmrTXLevel, ysfTXLevel, p25TXLevel, nxdnTXLevel);
-	m_modem->setRFParams(rxFrequency, rxOffset, txFrequency, txOffset, txDCOffset, rxDCOffset, rfLevel);
+	m_modem = new CModem(port, protocol, address, m_duplex, rxInvert, txInvert, pttInvert, txDelay, dmrDelay, trace, debug);
+	m_modem->setModeParams(m_dstarEnabled, m_dmrEnabled, m_ysfEnabled, m_p25Enabled, m_nxdnEnabled, m_pocsagEnabled);
+	m_modem->setLevels(rxLevel, cwIdTXLevel, dstarTXLevel, dmrTXLevel, ysfTXLevel, p25TXLevel, nxdnTXLevel, pocsagTXLevel);
+	m_modem->setRFParams(rxFrequency, rxOffset, txFrequency, txOffset, txDCOffset, rxDCOffset, rfLevel, pocsagFrequency);
 	m_modem->setDMRParams(colorCode);
-	m_modem->setYSFParams(lowDeviation);
+	m_modem->setYSFParams(lowDeviation, txHang);
 
 	bool ret = m_modem->open();
 	if (!ret) {
@@ -1159,21 +1276,21 @@ bool CMMDVMHost::createP25Network()
 
 bool CMMDVMHost::createNXDNNetwork()
 {
-	std::string myAddress      = m_conf.getNXDNNetworkMyAddress();
-	unsigned int myPort        = m_conf.getNXDNNetworkMyPort();
-	std::string gatewayAddress = m_conf.getNXDNNetworkGatewayAddress();
-	unsigned int gatewayPort   = m_conf.getNXDNNetworkGatewayPort();
+	std::string gatewayAddress = m_conf.getNXDNGatewayAddress();
+	unsigned int gatewayPort   = m_conf.getNXDNGatewayPort();
+	std::string localAddress   = m_conf.getNXDNLocalAddress();
+	unsigned int localPort     = m_conf.getNXDNLocalPort();
 	m_nxdnNetModeHang          = m_conf.getNXDNNetworkModeHang();
 	bool debug                 = m_conf.getNXDNNetworkDebug();
 
 	LogInfo("NXDN Network Parameters");
-	LogInfo("    Local Address: %s", myAddress.c_str());
-	LogInfo("    Local Port: %u", myPort);
 	LogInfo("    Gateway Address: %s", gatewayAddress.c_str());
 	LogInfo("    Gateway Port: %u", gatewayPort);
+	LogInfo("    Local Address: %s", localAddress.c_str());
+	LogInfo("    Local Port: %u", localPort);
 	LogInfo("    Mode Hang: %us", m_nxdnNetModeHang);
 
-	m_nxdnNetwork = new CNXDNNetwork(myAddress, myPort, gatewayAddress, gatewayPort, m_callsign, debug);
+	m_nxdnNetwork = new CNXDNNetwork(localAddress, localPort, gatewayAddress, gatewayPort, debug);
 
 	bool ret = m_nxdnNetwork->open();
 	if (!ret) {
@@ -1187,17 +1304,48 @@ bool CMMDVMHost::createNXDNNetwork()
 	return true;
 }
 
+bool CMMDVMHost::createPOCSAGNetwork()
+{
+	std::string gatewayAddress = m_conf.getPOCSAGGatewayAddress();
+	unsigned int gatewayPort   = m_conf.getPOCSAGGatewayPort();
+	std::string localAddress   = m_conf.getPOCSAGLocalAddress();
+	unsigned int localPort     = m_conf.getPOCSAGLocalPort();
+	m_pocsagNetModeHang        = m_conf.getPOCSAGNetworkModeHang();
+	bool debug                 = m_conf.getPOCSAGNetworkDebug();
+
+	LogInfo("POCSAG Network Parameters");
+	LogInfo("    Gateway Address: %s", gatewayAddress.c_str());
+	LogInfo("    Gateway Port: %u", gatewayPort);
+	LogInfo("    Local Address: %s", localAddress.c_str());
+	LogInfo("    Local Port: %u", localPort);
+	LogInfo("    Mode Hang: %us", m_pocsagNetModeHang);
+
+	m_pocsagNetwork = new CPOCSAGNetwork(localAddress, localPort, gatewayAddress, gatewayPort, debug);
+
+	bool ret = m_pocsagNetwork->open();
+	if (!ret) {
+		delete m_pocsagNetwork;
+		m_pocsagNetwork = NULL;
+		return false;
+	}
+
+	m_pocsagNetwork->enable(true);
+
+	return true;
+}
+
 void CMMDVMHost::readParams()
 {
-	m_dstarEnabled = m_conf.getDStarEnabled();
-	m_dmrEnabled   = m_conf.getDMREnabled();
-	m_ysfEnabled   = m_conf.getFusionEnabled();
-	m_p25Enabled   = m_conf.getP25Enabled();
-	m_nxdnEnabled  = m_conf.getNXDNEnabled();
-	m_duplex       = m_conf.getDuplex();
-	m_callsign     = m_conf.getCallsign();
-	m_id           = m_conf.getId();
-	m_timeout      = m_conf.getTimeout();
+	m_dstarEnabled  = m_conf.getDStarEnabled();
+	m_dmrEnabled    = m_conf.getDMREnabled();
+	m_ysfEnabled    = m_conf.getFusionEnabled();
+	m_p25Enabled    = m_conf.getP25Enabled();
+	m_nxdnEnabled   = m_conf.getNXDNEnabled();
+	m_pocsagEnabled = m_conf.getPOCSAGEnabled();
+	m_duplex        = m_conf.getDuplex();
+	m_callsign      = m_conf.getCallsign();
+	m_id            = m_conf.getId();
+	m_timeout       = m_conf.getTimeout();
 
 	LogInfo("General Parameters");
 	LogInfo("    Callsign: %s", m_callsign.c_str());
@@ -1209,6 +1357,7 @@ void CMMDVMHost::readParams()
 	LogInfo("    YSF: %s", m_ysfEnabled ? "enabled" : "disabled");
 	LogInfo("    P25: %s", m_p25Enabled ? "enabled" : "disabled");
 	LogInfo("    NXDN: %s", m_nxdnEnabled ? "enabled" : "disabled");
+	LogInfo("    POCSAG: %s", m_pocsagEnabled ? "enabled" : "disabled");
 }
 
 void CMMDVMHost::createDisplay()
@@ -1346,7 +1495,7 @@ void CMMDVMHost::createDisplay()
         unsigned char brightness = m_conf.getOLEDBrightness();
         bool          invert     = m_conf.getOLEDInvert();
 		bool          scroll     = m_conf.getOLEDScroll();
-		m_display = new COLED(type, brightness, invert, scroll);
+		m_display = new COLED(type, brightness, invert, scroll, m_conf.getDMRNetworkSlot1(), m_conf.getDMRNetworkSlot2());
 #endif
 	} else {
 		m_display = new CNullDisplay;
@@ -1380,6 +1529,8 @@ void CMMDVMHost::setMode(unsigned char mode)
 			m_p25Network->enable(false);
 		if (m_nxdnNetwork != NULL)
 			m_nxdnNetwork->enable(false);
+		if (m_pocsagNetwork != NULL)
+			m_pocsagNetwork->enable(false);
 		m_modem->setMode(MODE_DSTAR);
 		if (m_ump != NULL)
 			m_ump->setMode(MODE_DSTAR);
@@ -1397,6 +1548,8 @@ void CMMDVMHost::setMode(unsigned char mode)
 			m_p25Network->enable(false);
 		if (m_nxdnNetwork != NULL)
 			m_nxdnNetwork->enable(false);
+		if (m_pocsagNetwork != NULL)
+			m_pocsagNetwork->enable(false);
 		m_modem->setMode(MODE_DMR);
 		if (m_ump != NULL)
 			m_ump->setMode(MODE_DMR);
@@ -1418,6 +1571,8 @@ void CMMDVMHost::setMode(unsigned char mode)
 			m_p25Network->enable(false);
 		if (m_nxdnNetwork != NULL)
 			m_nxdnNetwork->enable(false);
+		if (m_pocsagNetwork != NULL)
+			m_pocsagNetwork->enable(false);
 		m_modem->setMode(MODE_YSF);
 		if (m_ump != NULL)
 			m_ump->setMode(MODE_YSF);
@@ -1435,6 +1590,8 @@ void CMMDVMHost::setMode(unsigned char mode)
 			m_ysfNetwork->enable(false);
 		if (m_nxdnNetwork != NULL)
 			m_nxdnNetwork->enable(false);
+		if (m_pocsagNetwork != NULL)
+			m_pocsagNetwork->enable(false);
 		m_modem->setMode(MODE_P25);
 		if (m_ump != NULL)
 			m_ump->setMode(MODE_P25);
@@ -1452,10 +1609,31 @@ void CMMDVMHost::setMode(unsigned char mode)
 			m_ysfNetwork->enable(false);
 		if (m_p25Network != NULL)
 			m_p25Network->enable(false);
+		if (m_pocsagNetwork != NULL)
+			m_pocsagNetwork->enable(false);
 		m_modem->setMode(MODE_NXDN);
 		if (m_ump != NULL)
 			m_ump->setMode(MODE_NXDN);
 		m_mode = MODE_NXDN;
+		m_modeTimer.start();
+		m_cwIdTimer.stop();
+		break;
+
+	case MODE_POCSAG:
+		if (m_dstarNetwork != NULL)
+			m_dstarNetwork->enable(false);
+		if (m_dmrNetwork != NULL)
+			m_dmrNetwork->enable(false);
+		if (m_ysfNetwork != NULL)
+			m_ysfNetwork->enable(false);
+		if (m_p25Network != NULL)
+			m_p25Network->enable(false);
+		if (m_nxdnNetwork != NULL)
+			m_nxdnNetwork->enable(false);
+		m_modem->setMode(MODE_POCSAG);
+		if (m_ump != NULL)
+			m_ump->setMode(MODE_POCSAG);
+		m_mode = MODE_POCSAG;
 		m_modeTimer.start();
 		m_cwIdTimer.stop();
 		break;
@@ -1472,6 +1650,8 @@ void CMMDVMHost::setMode(unsigned char mode)
 			m_p25Network->enable(false);
 		if (m_nxdnNetwork != NULL)
 			m_nxdnNetwork->enable(false);
+		if (m_pocsagNetwork != NULL)
+			m_pocsagNetwork->enable(false);
 		if (m_mode == MODE_DMR && m_duplex && m_modem->hasTX()) {
 			m_modem->writeDMRStart(false);
 			m_dmrTXTimer.stop();
@@ -1497,6 +1677,8 @@ void CMMDVMHost::setMode(unsigned char mode)
 			m_p25Network->enable(false);
 		if (m_nxdnNetwork != NULL)
 			m_nxdnNetwork->enable(false);
+		if (m_pocsagNetwork != NULL)
+			m_pocsagNetwork->enable(false);
 		if (m_mode == MODE_DMR && m_duplex && m_modem->hasTX()) {
 			m_modem->writeDMRStart(false);
 			m_dmrTXTimer.stop();
@@ -1520,6 +1702,8 @@ void CMMDVMHost::setMode(unsigned char mode)
 			m_p25Network->enable(true);
 		if (m_nxdnNetwork != NULL)
 			m_nxdnNetwork->enable(true);
+		if (m_pocsagNetwork != NULL)
+			m_pocsagNetwork->enable(true);
 		if (m_mode == MODE_DMR && m_duplex && m_modem->hasTX()) {
 			m_modem->writeDMRStart(false);
 			m_dmrTXTimer.stop();

@@ -70,6 +70,8 @@ public:
 
   // The Modem section
   std::string  getModemPort() const;
+  std::string  getModemProtocol() const;
+  unsigned int getModemAddress() const;
   bool         getModemRXInvert() const;
   bool         getModemTXInvert() const;
   bool         getModemPTTInvert() const;
@@ -87,9 +89,16 @@ public:
   float        getModemYSFTXLevel() const;
   float        getModemP25TXLevel() const;
   float        getModemNXDNTXLevel() const;
+  float        getModemPOCSAGTXLevel() const;
   std::string  getModemRSSIMappingFile() const;
   bool         getModemTrace() const;
   bool         getModemDebug() const;
+
+  // The Transparent Data section
+  bool         getTransparentEnabled() const;
+  std::string  getTransparentRemoteAddress() const;
+  unsigned int getTransparentRemotePort() const;
+  unsigned int getTransparentLocalPort() const;
 
   // The UMP section
   bool         getUMPEnabled() const;
@@ -130,6 +139,7 @@ public:
   bool          getFusionLowDeviation() const;
   bool          getFusionRemoteGateway() const;
   bool          getFusionSelfOnly() const;
+  unsigned int  getFusionTXHang() const;
   bool          getFusionSQLEnabled() const;
   unsigned char getFusionSQL() const;
   unsigned int  getFusionModeHang() const;
@@ -150,6 +160,10 @@ public:
   bool         getNXDNSelfOnly() const;
   bool         getNXDNRemoteGateway() const;
   unsigned int getNXDNModeHang() const;
+
+  // The POCSAG section
+  bool         getPOCSAGEnabled() const;
+  unsigned int getPOCSAGFrequency() const;
 
   // The D-Star Network section
   bool         getDStarNetworkEnabled() const;
@@ -191,12 +205,21 @@ public:
 
   // The NXDN Network section
   bool         getNXDNNetworkEnabled() const;
-  std::string  getNXDNNetworkMyAddress() const;
-  unsigned int getNXDNNetworkMyPort() const;
-  std::string  getNXDNNetworkGatewayAddress() const;
-  unsigned int getNXDNNetworkGatewayPort() const;
+  std::string  getNXDNGatewayAddress() const;
+  unsigned int getNXDNGatewayPort() const;
+  std::string  getNXDNLocalAddress() const;
+  unsigned int getNXDNLocalPort() const;
   unsigned int getNXDNNetworkModeHang() const;
   bool         getNXDNNetworkDebug() const;
+
+  // The POCSAG Network section
+  bool         getPOCSAGNetworkEnabled() const;
+  std::string  getPOCSAGGatewayAddress() const;
+  unsigned int getPOCSAGGatewayPort() const;
+  std::string  getPOCSAGLocalAddress() const;
+  unsigned int getPOCSAGLocalPort() const;
+  unsigned int getPOCSAGNetworkModeHang() const;
+  bool         getPOCSAGNetworkDebug() const;
 
   // The TFTSERIAL section
   std::string  getTFTSerialPort() const;
@@ -271,6 +294,8 @@ private:
   unsigned int m_nxdnIdLookupTime;
 
   std::string  m_modemPort;
+  std::string  m_modemProtocol;
+  unsigned int m_modemAddress;
   bool         m_modemRXInvert;
   bool         m_modemTXInvert;
   bool         m_modemPTTInvert;
@@ -288,9 +313,15 @@ private:
   float        m_modemYSFTXLevel;
   float        m_modemP25TXLevel;
   float        m_modemNXDNTXLevel;
+  float        m_modemPOCSAGTXLevel;
   std::string  m_modemRSSIMappingFile;
   bool         m_modemTrace;
   bool         m_modemDebug;
+
+  bool         m_transparentEnabled;
+  std::string  m_transparentRemoteAddress;
+  unsigned int m_transparentRemotePort;
+  unsigned int m_transparentLocalPort;
 
   bool         m_umpEnabled;
   std::string  m_umpPort;
@@ -327,6 +358,7 @@ private:
   bool          m_fusionLowDeviation;
   bool          m_fusionRemoteGateway;
   bool          m_fusionSelfOnly;
+  unsigned int  m_fusionTXHang;
   bool          m_fusionSQLEnabled;
   unsigned char m_fusionSQL;
   unsigned int  m_fusionModeHang;
@@ -345,6 +377,9 @@ private:
   bool         m_nxdnSelfOnly;
   bool         m_nxdnRemoteGateway;
   unsigned int m_nxdnModeHang;
+
+  bool         m_pocsagEnabled;
+  unsigned int m_pocsagFrequency;
 
   bool         m_dstarNetworkEnabled;
   std::string  m_dstarGatewayAddress;
@@ -381,12 +416,20 @@ private:
   bool         m_p25NetworkDebug;
 
   bool         m_nxdnNetworkEnabled;
-  std::string  m_nxdnNetworkMyAddress;
-  unsigned int m_nxdnNetworkMyPort;
-  std::string  m_nxdnNetworkGatewayAddress;
-  unsigned int m_nxdnNetworkGatewayPort;
+  std::string  m_nxdnGatewayAddress;
+  unsigned int m_nxdnGatewayPort;
+  std::string  m_nxdnLocalAddress;
+  unsigned int m_nxdnLocalPort;
   unsigned int m_nxdnNetworkModeHang;
   bool         m_nxdnNetworkDebug;
+
+  bool         m_pocsagNetworkEnabled;
+  std::string  m_pocsagGatewayAddress;
+  unsigned int m_pocsagGatewayPort;
+  std::string  m_pocsagLocalAddress;
+  unsigned int m_pocsagLocalPort;
+  unsigned int m_pocsagNetworkModeHang;
+  bool         m_pocsagNetworkDebug;
 
   std::string  m_tftSerialPort;
   unsigned int m_tftSerialBrightness;
